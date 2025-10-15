@@ -1,0 +1,20 @@
+/* Appropriate CSS selector for your video element */
+#videoElem::-webkit-media-controls-current-time-display {
+  display: none !important;
+}
+
+#videoElem::-webkit-media-controls-time-remaining-display {
+  display: none !important;
+}
+
+#videoElem::-webkit-media-controls-time-remaining-display-container {
+  display: none !important;
+}
+
+#videoElem::-webkit-media-controls-timeline {
+  display: none !important;
+}
+
+#videoElem::-webkit-media-controls-play-button {
+  // display: none !important;
+}

@@ -1,0 +1,42 @@
+/* src/index.css */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.ant-layout {
+  min-height: 100vh;
+}
+
+.ant-layout-sider {
+  background: #001529 !important;
+}
+
+.ant-menu-dark .ant-menu-item-selected {
+  background-color: #1890ff !important;
+  border-radius: 4px;
+  margin: 4px 8px;
+  width: calc(100% - 16px);
+}
+
+.ant-menu-dark .ant-menu-item {
+  margin: 4px 8px;
+  width: calc(100% - 16px);
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.ant-menu-dark .ant-menu-item:hover {
+  background-color: #0958d9;
+}
+
+@media (max-width: 768px) {
+  .ant-layout-sider {
+    position: fixed;
+    z-index: 1000;
+    height: 100vh;
+  }
+  .ant-layout-content {
+    margin-left: 0 !important;
+  }
+}
