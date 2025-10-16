@@ -40,3 +40,13 @@ body {
     margin-left: 0 !important;
   }
 }
+
+/* 모바일 메뉴 스크롤바 숨김 */
+.mobile-menu-scroll {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.mobile-menu-scroll::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
