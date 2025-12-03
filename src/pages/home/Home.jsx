@@ -15,18 +15,43 @@ import mqtt from 'mqtt';
 import HeaderComponent from '../../components/HeaderComponent';
 
 function Home() {
+  const DEFAULT_DEVICE_ID = 'toilet-r01';
+  const [deviceId, setDeviceId] = useState(() => localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID);
   const [inputValue, setInputValue] = useState('');
   const [sensorData, setSensorData] = useState({
     temperature: 0, // °C
     humidity: 0,    // %
     pm10: '',       // 좋음/보통/나쁨
   });
+  const serialDisplayValue = deviceId?.trim() ? deviceId.trim() : '미설정';
   const client = useRef(null);
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
   const MQTT_BROKER_URL = `${protocol}//${window.location.host}/mqtt`; //raspberry pi test
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const storedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
+      setDeviceId(storedDeviceId);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
   // const MQTT_BROKER_URL = `wss://ijoon.iptime.org:25813/mqtt`;
   useEffect(() => {
+    if (!deviceId) {
+      message.warning('디바이스 ID가 설정되지 않아 MQTT 연결을 건너뜁니다.');
+      return undefined;
+    }
+
+    const sensorTopics = {
+      temperature: `${deviceId}/data/temp`,
+      humidity: `${deviceId}/data/humidity`,
+      pm10: `${deviceId}/data/pm10`,
+    };
+
     client.current = mqtt.connect(MQTT_BROKER_URL, {
       clientId: `mqttjs_${Math.random().toString(16).substr(2, 8)}`,
       username: "ijoon",
@@ -42,16 +67,10 @@ function Home() {
       message.success('MQTT 연결됨');
       
       // retain 메시지를 받기 위해 QoS 1로 구독하고 약간의 지연 추가
-      const topics = [
-        'device_1_ac/data/temp',
-        'device_1_ac/data/humidity', 
-        'device_1_ac/data/pm10'
-      ];
+      const topics = Object.values(sensorTopics);
       
-      // 연결 후 약간의 지연을 두고 구독 (retain 메시지 수신을 위해)
       setTimeout(() => {
         topics.forEach((topic, index) => {
-          // 각 토픽을 순차적으로 구독 (retain 메시지 수신을 위해)
           setTimeout(() => {
             client.current.subscribe(topic, { qos: 1 }, (err) => {
               if (err) {
@@ -60,35 +79,32 @@ function Home() {
                 console.log(`${topic} 구독 성공 (QoS 1) - retain 메시지 대기중`);
               }
             });
-          }, index * 50); // 각 토픽마다 50ms씩 지연
+          }, index * 50);
         });
         console.log('센서 토픽 구독 시작');
-      }, 200); // 200ms 지연
+      }, 200);
     });
 
-    client.current.on('message', (topic, payload, packet) => {
-      console.log('메시지 수신됨!');
-      console.log('원본 토픽:', topic);
-      console.log('원본 페이로드:', payload.toString());
-      console.log('Retain 플래그:', packet.retain);
-      console.log('QoS:', packet.qos);
-      
+    client.current.on('message', (topic, payload) => {
       switch (topic) {
-        case 'device_1_ac/data/temp':
+        case sensorTopics.temperature: {
           const tempData = parseFloat(payload.toString());
           console.log('온도 데이터 업데이트:', tempData);
           setSensorData(prev => ({ ...prev, temperature: tempData }));
           break;
-        case 'device_1_ac/data/humidity':
+        }
+        case sensorTopics.humidity: {
           const humidityData = parseFloat(payload.toString());
           console.log('습도 데이터 업데이트:', humidityData);
           setSensorData(prev => ({ ...prev, humidity: humidityData }));
           break;
-        case 'device_1_ac/data/pm10':
-          const pm10Data = payload.toString(); // 한글 텍스트 그대로 사용
+        }
+        case sensorTopics.pm10: {
+          const pm10Data = payload.toString();
           console.log('PM10 데이터 업데이트:', pm10Data);
           setSensorData(prev => ({ ...prev, pm10: pm10Data }));
           break;
+        }
         default:
           console.log('알 수 없는 토픽:', topic);
       }
@@ -121,9 +137,10 @@ function Home() {
     return () => {
       if (client.current) {
         client.current.end();
+        client.current = null;
       }
     };
-  }, []);
+  }, [deviceId, MQTT_BROKER_URL]);
 
   const publishMessage = (topic, payload) => {
     if (client.current && client.current.connected) {
@@ -155,7 +172,7 @@ function Home() {
       console.log("Modal 확인 버튼 클릭됨");
       const mqttPayload = { action: inputValue };
       try {
-        const topic = `device_1_ac/lb`;
+        const topic = `${deviceId}/lb`;
         publishMessage(topic, mqttPayload);
       } catch {
         message.error("MQTT 연결 안됨");
@@ -191,7 +208,7 @@ function Home() {
     const confirmed = window.confirm(`${commandName} 명령을 실행하시겠습니까?`);
     if (confirmed) {
       console.log("Modal 확인 버튼 클릭됨");
-      const topic = "device_1_ac/control";
+      const topic = `${deviceId}/control`;
       const payload = { command: cmd };
       if (client.current && client.current.connected) {
         client.current.publish(topic, JSON.stringify(payload));
@@ -224,19 +241,40 @@ function Home() {
     }
   };
 
+  const isMobile = window.innerWidth < 768;
+
   return (
     <div style={{ minHeight: '100vh' }}>
       <HeaderComponent />
       <div 
         className="bg-gradient-to-b from-gray-50 to-gray-100"
         style={{ 
-          padding: window.innerWidth < 768 ? '16px 12px' : '24px',
-          paddingTop: window.innerWidth < 768 ? '16px' : '24px',
-          minHeight: 'calc(100vh - 120px)'
+          padding: isMobile ? '12px 8px' : '24px',
+          paddingTop: isMobile ? '12px' : '24px',
+          minHeight: 'calc(100vh - 120px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start'
         }}
       >
-      {/* Input and Button Section */}
-      <div className="mb-6">
+        <div style={{
+          width: '100%',
+          maxWidth: isMobile ? '100%' : '1600px',
+          margin: '0 auto'
+        }}>
+          <Card
+            style={{
+              borderRadius: '20px',
+              border: '1px solid #e5e7eb',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              background: '#ffffff'
+            }}
+            bodyStyle={{
+              padding: isMobile ? '16px' : '24px'
+            }}
+          >
+      {/* Input and Button Section - Compact */}
+      <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
         <div style={{ position: 'relative', width: '100%', maxWidth: '500px', margin: '0 auto' }}>
           <Input
             placeholder="전광판 데이터 입력 (1-30자)"
@@ -287,120 +325,118 @@ function Home() {
 
       <Divider style={{ margin: window.innerWidth < 768 ? '24px 0' : '40px 0' }} />
 
-      {/* Sensor Data Section - Enhanced Visibility */}
-      <div className="mb-6">
-        <div style={{ marginBottom: '20px' }}>
+      {/* Sensor Data Section - Compact Horizontal Layout */}
+      <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
+        <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
           <h2 style={{ 
-            fontSize: '24px', 
+            fontSize: isMobile ? '18px' : '20px', 
             fontWeight: 'bold', 
             color: '#1f2937', 
             margin: 0,
-            marginBottom: '8px'
+            marginBottom: '4px'
           }}>
             실시간 환경 데이터
           </h2>
           <div style={{ 
-            width: '60px', 
-            height: '3px', 
+            width: '50px', 
+            height: '2px', 
             backgroundColor: '#3b82f6',
             borderRadius: '2px'
           }}></div>
         </div>
-        <Row gutter={[20, 20]}>
+        <Row gutter={[isMobile ? 6 : 10, isMobile ? 6 : 10]}>
           {/* 온도 카드 */}
-          <Col xs={24} sm={12} md={6} lg={6} xl={6}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card 
-              className="text-center shadow-lg hover:shadow-xl transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '20px',
-                border: 'none',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '200px',
-                border: '1px solid #e5e7eb'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
             >
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: isMobile ? '6px' : '12px' }}>
                 <Progress
                   type="circle"
                   percent={Math.min(((sensorData.temperature + 10) / 60) * 100, 100)}
-                  size={100}
+                  size={isMobile ? 45 : 75}
                   strokeColor={{
                     '0%': '#3b82f6',
                     '100%': '#3b82f6',
                   }}
                   trailColor="rgba(59, 130, 246, 0.2)"
-                  strokeWidth={8}
+                  strokeWidth={6}
                   format={() => (
                     <div style={{ color: '#374151', textAlign: 'center' }}>
-                      <div style={{ fontSize: '24px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.temperature}</div>
-                      <div style={{ fontSize: '16px', fontWeight: '500' }}>°C</div>
+                      <div style={{ fontSize: isMobile ? '12px' : '20px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.temperature}</div>
+                      <div style={{ fontSize: isMobile ? '8px' : '12px', fontWeight: '500' }}>°C</div>
                     </div>
                   )}
                 />
               </div>
-              <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px' }}>온도</div>
-              <div style={{ fontSize: '14px', opacity: 0.8 }}>Temperature</div>
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>온도</div>
             </Card>
           </Col>
 
           {/* 습도 카드 */}
-          <Col xs={24} sm={12} md={6} lg={6} xl={6}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card 
-              className="text-center shadow-lg hover:shadow-xl transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '20px',
-                border: 'none',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '200px',
-                border: '1px solid #e5e7eb'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
             >
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: isMobile ? '6px' : '12px' }}>
                 <Progress
                   type="circle"
                   percent={sensorData.humidity}
-                  size={100}
+                  size={isMobile ? 45 : 75}
                   strokeColor={{
                     '0%': '#3b82f6',
                     '100%': '#3b82f6',
                   }}
                   trailColor="rgba(59, 130, 246, 0.2)"
-                  strokeWidth={8}
+                  strokeWidth={6}
                   format={() => (
                     <div style={{ color: '#374151', textAlign: 'center' }}>
-                      <div style={{ fontSize: '24px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.humidity}</div>
-                      <div style={{ fontSize: '16px', fontWeight: '500' }}>%</div>
+                      <div style={{ fontSize: isMobile ? '12px' : '20px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.humidity}</div>
+                      <div style={{ fontSize: isMobile ? '8px' : '12px', fontWeight: '500' }}>%</div>
                     </div>
                   )}
                 />
               </div>
-              <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px' }}>습도</div>
-              <div style={{ fontSize: '14px', opacity: 0.8 }}>Humidity</div>
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>습도</div>
             </Card>
           </Col>
 
           {/* 미세먼지 카드 */}
-          <Col xs={24} sm={12} md={6} lg={6} xl={6}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card 
-              className="text-center shadow-lg hover:shadow-xl transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '20px',
-                border: 'none',
+                borderRadius: '12px',
+                border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '200px',
-                border: '1px solid #e5e7eb'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
             >
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: isMobile ? '6px' : '12px' }}>
                 <div style={{ 
-                  width: '100px', 
-                  height: '100px', 
+                  width: isMobile ? '45px' : '75px', 
+                  height: isMobile ? '45px' : '75px', 
                   borderRadius: '50%', 
                   background: `linear-gradient(135deg, ${getDustColor(sensorData.pm10)} 0%, ${getDustColor(sensorData.pm10)}aa 100%)`,
                   display: 'flex',
@@ -409,25 +445,23 @@ function Home() {
                   margin: '0 auto'
                 }}>
                   <div style={{ color: 'white', textAlign: 'center' }}>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.pm10 || '대기중'}</div>
+                    <div style={{ fontSize: isMobile ? '10px' : '16px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.pm10 || '대기중'}</div>
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: '18px', fontWeight: '700', marginBottom: '4px' }}>미세먼지</div>
-              <div style={{ fontSize: '14px', opacity: 0.8 }}>PM10</div>
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>미세먼지</div>
             </Card>
           </Col>
-
         </Row>
       </div>
 
-      <Divider style={{ margin: window.innerWidth < 768 ? '24px 0' : '40px 0' }} />
+      <Divider style={{ margin: isMobile ? '12px 0' : '16px 0' }} />
 
-      {/* 제어 명령 버튼 영역 - Icon Card Style */}
-      <div className="mb-6">
-        <div style={{ marginBottom: '20px' }}>
+      {/* 제어 명령 버튼 영역 - Compact Grid */}
+      <div>
+        <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
           <h2 style={{ 
-            fontSize: '24px', 
+            fontSize: isMobile ? '18px' : '20px', 
             fontWeight: 'bold', 
             color: '#1f2937', 
             margin: 0,
@@ -436,171 +470,178 @@ function Home() {
             시스템 제어
           </h2>
           <div style={{ 
-            width: '60px', 
-            height: '3px', 
+            width: '50px', 
+            height: '2px', 
             backgroundColor: '#3b82f6',
             borderRadius: '2px'
           }}></div>
         </div>
-        <Row gutter={[16, 16]}>
+        <Row gutter={[isMobile ? 6 : 10, isMobile ? 6 : 10]}>
           {/* 소독액 분사 버튼들 */}
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => {
                 console.log("소독액 분사(여) 버튼 클릭됨");
                 publishCommand("spray_female");
               }}
             >
-              <WomanOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>소독액 분사</div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>(여)</div>
+              <WomanOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#374151' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>소독액</div>
+              <div style={{ fontSize: isMobile ? '10px' : '14px', opacity: 0.8, marginTop: '2px' }}>(여)</div>
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("spray_male")}
             >
-              <ManOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>소독액 분사</div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>(남)</div>
+              <ManOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#374151' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>소독액</div>
+              <div style={{ fontSize: isMobile ? '10px' : '14px', opacity: 0.8, marginTop: '2px' }}>(남)</div>
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("spray_both")}
             >
-              <TeamOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>소독액 분사</div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>(남&여)</div>
+              <TeamOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#374151' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>소독액</div>
+              <div style={{ fontSize: isMobile ? '10px' : '14px', opacity: 0.8, marginTop: '2px' }}>(전체)</div>
             </Card>
           </Col>
 
           {/* 환풍기 버튼들 */}
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("fan_female")}
             >
-              <ThunderboltOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>환풍기</div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>(여)</div>
+              <ThunderboltOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#374151' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>환풍기</div>
+              <div style={{ fontSize: isMobile ? '10px' : '14px', opacity: 0.8, marginTop: '2px' }}>(여)</div>
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("fan_male")}
             >
-              <ThunderboltOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>환풍기</div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>(남)</div>
+              <ThunderboltOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#374151' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>환풍기</div>
+              <div style={{ fontSize: isMobile ? '10px' : '14px', opacity: 0.8, marginTop: '2px' }}>(남)</div>
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("fan_both")}
             >
-              <TeamOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>환풍기</div>
-              <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '4px' }}>(남&여)</div>
+              <TeamOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#374151' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>환풍기</div>
+              <div style={{ fontSize: isMobile ? '10px' : '14px', opacity: 0.8, marginTop: '2px' }}>(전체)</div>
             </Card>
           </Col>
 
           {/* 중단 버튼 */}
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
-                background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                aspectRatio: '1',
+                width: '100%'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '24px 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("stop_all")}
             >
-              <StopOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>모두 중단</div>
+              <StopOutlined style={{ fontSize: isMobile ? '24px' : '42px', marginBottom: isMobile ? '6px' : '12px', color: '#dc2626' }} />
+              <div style={{ fontSize: isMobile ? '11px' : '16px', fontWeight: '600', textAlign: 'center', lineHeight: 1.2 }}>모두 중단</div>
             </Card>
           </Col>
 
-          {/* 모터 컨트롤 버튼들 */}
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          {/* 모터 컨트롤 버튼들
+          <Col xs={8} sm={6} md={4} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                minHeight: isMobile ? '90px' : '100px'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("motor_start")}
             >
               <PlayCircleOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
@@ -608,18 +649,18 @@ function Home() {
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={6} md={4} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                minHeight: isMobile ? '90px' : '100px'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("motor_stop")}
             >
               <PauseCircleOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
@@ -627,18 +668,18 @@ function Home() {
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={6} md={4} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                minHeight: isMobile ? '90px' : '100px'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("motor_speed_up")}
             >
               <PlusOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
@@ -646,26 +687,55 @@ function Home() {
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={8} lg={6} xl={4}>
+          <Col xs={8} sm={6} md={4} lg={3}>
             <Card
               hoverable
-              className="text-center shadow-md hover:shadow-lg transition-all duration-300"
+              className="text-center shadow-sm hover:shadow-md transition-all duration-300"
               style={{
-                borderRadius: '16px',
+                borderRadius: '12px',
                 border: '1px solid #e5e7eb',
                 background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
                 color: '#374151',
-                minHeight: '120px'
+                minHeight: isMobile ? '90px' : '100px'
               }}
-              bodyStyle={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              bodyStyle={{ padding: isMobile ? '12px 6px' : '16px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
               onClick={() => publishCommand("motor_speed_down")}
             >
               <MinusOutlined style={{ fontSize: '32px', marginBottom: '12px', color: '#374151' }} />
               <div style={{ fontSize: '14px', fontWeight: '600', textAlign: 'center' }}>속도 감소</div>
             </Card>
-          </Col>
+          </Col> */}
         </Row>
       </div>
+          </Card>
+          <Card
+            style={{
+              marginTop: isMobile ? '12px' : '20px',
+              borderRadius: '16px',
+              border: '1px solid #e5e7eb',
+              background: '#f8fafc'
+            }}
+            bodyStyle={{
+              display: isMobile ? 'block' : 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              padding: isMobile ? '16px' : '24px'
+            }}
+          >
+            <div>
+              <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                현재 시리얼 ID
+              </div>
+              <div style={{ marginTop: '6px', fontSize: isMobile ? '18px' : '22px', fontWeight: 700, color: '#111827' }}>
+                Serial : {serialDisplayValue}
+              </div>
+            </div>
+            <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#4b5563', fontWeight: 500 }}>
+              환경설정에서 변경 가능합니다.
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   );

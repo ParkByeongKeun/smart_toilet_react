@@ -147,7 +147,7 @@ function HeaderComponent() {
               flexShrink: 0
             }}
           >
-            로그인 / 회원가입
+            로그인
           </span>
           </div>
         </div>
