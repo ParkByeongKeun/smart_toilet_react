@@ -13,9 +13,9 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import mqtt from 'mqtt';
 import HeaderComponent from '../../components/HeaderComponent';
+import { DEFAULT_DEVICE_ID } from '../../constants/device';
 
 function Home() {
-  const DEFAULT_DEVICE_ID = 'toilet-r01';
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID);
   const [inputValue, setInputValue] = useState('');
   const [sensorData, setSensorData] = useState({
@@ -23,7 +23,6 @@ function Home() {
     humidity: 0,    // %
     pm10: '',       // 좋음/보통/나쁨
   });
-  const serialDisplayValue = deviceId?.trim() ? deviceId.trim() : '미설정';
   const client = useRef(null);
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
@@ -34,9 +33,20 @@ function Home() {
       setDeviceId(storedDeviceId);
     };
 
+    const handleDeviceIdChange = (event) => {
+      if (event?.detail) {
+        setDeviceId(event.detail);
+      } else {
+        const storedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
+        setDeviceId(storedDeviceId);
+      }
+    };
+
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('deviceIdChange', handleDeviceIdChange);
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('deviceIdChange', handleDeviceIdChange);
     };
   }, []);
   // const MQTT_BROKER_URL = `wss://ijoon.iptime.org:25813/mqtt`;
@@ -707,33 +717,6 @@ function Home() {
           </Col> */}
         </Row>
       </div>
-          </Card>
-          <Card
-            style={{
-              marginTop: isMobile ? '12px' : '20px',
-              borderRadius: '16px',
-              border: '1px solid #e5e7eb',
-              background: '#f8fafc'
-            }}
-            bodyStyle={{
-              display: isMobile ? 'block' : 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '16px',
-              padding: isMobile ? '16px' : '24px'
-            }}
-          >
-            <div>
-              <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                현재 시리얼 ID
-              </div>
-              <div style={{ marginTop: '6px', fontSize: isMobile ? '18px' : '22px', fontWeight: 700, color: '#111827' }}>
-                Serial : {serialDisplayValue}
-              </div>
-            </div>
-            <div style={{ fontSize: isMobile ? '12px' : '14px', color: '#4b5563', fontWeight: 500 }}>
-              환경설정에서 변경 가능합니다.
-            </div>
           </Card>
         </div>
       </div>

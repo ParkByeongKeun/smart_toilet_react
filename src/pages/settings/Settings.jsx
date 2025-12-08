@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { Card, Input, Button, message, Row, Col, Typography, Space } from 'antd';
 import { CheckOutlined } from '@ant-design/icons';
 import HeaderComponent from '../../components/HeaderComponent';
+import { DEFAULT_DEVICE_ID, broadcastDeviceIdChange } from '../../constants/device';
 
 const { Title, Text } = Typography;
-
-const DEFAULT_DEVICE_ID = 'toilet-r01';
 
 function Settings() {
   const [deviceId, setDeviceId] = useState('');
@@ -15,6 +14,17 @@ function Settings() {
     // 로컬 스토리지에서 저장된 디바이스 ID 로드
     const savedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
     setDeviceId(savedDeviceId);
+
+    const handleDeviceIdChange = (event) => {
+      if (event?.detail) {
+        setDeviceId(event.detail);
+      }
+    };
+
+    window.addEventListener('deviceIdChange', handleDeviceIdChange);
+    return () => {
+      window.removeEventListener('deviceIdChange', handleDeviceIdChange);
+    };
   }, []);
 
   const handleSave = () => {
@@ -26,6 +36,7 @@ function Settings() {
     const nextId = deviceId.trim();
     localStorage.setItem('deviceId', nextId);
     setDeviceId(nextId);
+    broadcastDeviceIdChange(nextId);
     messageApi.success(`디바이스 ID가 "${nextId}"로 저장되었습니다.`);
   };
 
