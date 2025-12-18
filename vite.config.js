@@ -27,6 +27,12 @@ export default defineConfig({
     host: true, // 0.0.0.0 으로 바인딩
     port: 5173,
     proxy: {
+      // REST API proxy to avoid CORS during local dev
+      '/api': {
+        target: 'http://192.168.13.5:25124',
+        changeOrigin: true,
+        secure: false,
+      },
       '/mqtt': {
         target: 'wss://ijoon.iptime.org:25813',
         changeOrigin: true,
