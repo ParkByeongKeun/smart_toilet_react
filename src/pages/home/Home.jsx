@@ -16,13 +16,12 @@ import HeaderComponent from '../../components/HeaderComponent';
 import { DEFAULT_DEVICE_ID } from '../../constants/device';
 
 function Home() {
+  const [messageApi, contextHolder] = message.useMessage();
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID);
   const [inputValue, setInputValue] = useState('');
-  const [sensorData, setSensorData] = useState({
-    temperature: 0, // °C
-    humidity: 0,    // %
-    pm10: '',       // 좋음/보통/나쁨
-  });
+  const INITIAL_SENSOR_DATA = { temperature: null, humidity: null, pm10: null };
+  const [sensorData, setSensorData] = useState(INITIAL_SENSOR_DATA);
+  const resetSensorData = () => setSensorData(INITIAL_SENSOR_DATA);
   const client = useRef(null);
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
@@ -52,9 +51,12 @@ function Home() {
   // const MQTT_BROKER_URL = `wss://ijoon.iptime.org:25813/mqtt`;
   useEffect(() => {
     if (!deviceId) {
-      message.warning('디바이스 ID가 설정되지 않아 MQTT 연결을 건너뜁니다.');
+      messageApi.warning('디바이스 ID가 설정되지 않아 MQTT 연결을 건너뜁니다.');
       return undefined;
     }
+
+    // 디바이스 변경 시 이전 센서 데이터를 초기화하여 다른 시리얼 값이 보이지 않도록 함
+    resetSensorData();
 
     const sensorTopics = {
       temperature: `${deviceId}/data/temp`,
@@ -74,7 +76,6 @@ function Home() {
     client.current.on('connect', () => {
       console.log('MQTT 연결 성공');
       console.log('브로커 URL:', MQTT_BROKER_URL);
-      message.success('MQTT 연결됨');
       
       // retain 메시지를 받기 위해 QoS 1로 구독하고 약간의 지연 추가
       const topics = Object.values(sensorTopics);
@@ -122,27 +123,25 @@ function Home() {
 
     client.current.on('error', (err) => {
       console.error('MQTT 에러:', err);
-      message.error('MQTT 연결 오류');
     });
 
     client.current.on('close', () => {
       console.log('MQTT 연결 종료');
-      message.warning('MQTT 연결 종료됨');
+      resetSensorData();
     });
 
     client.current.on('offline', () => {
       console.log('MQTT 오프라인');
-      message.warning('MQTT 오프라인');
+      resetSensorData();
     });
 
     client.current.on('reconnect', () => {
       console.log('MQTT 재연결 중...');
-      message.info('MQTT 재연결 중...');
     });
 
     client.current.on('disconnect', () => {
       console.log('MQTT 연결 끊김');
-      message.warning('MQTT 연결 끊김');
+      resetSensorData();
     });
     return () => {
       if (client.current) {
@@ -153,12 +152,29 @@ function Home() {
   }, [deviceId, MQTT_BROKER_URL]);
 
   const publishMessage = (topic, payload) => {
-    if (client.current && client.current.connected) {
-      client.current.publish(topic, JSON.stringify(payload));
-      message.success('메시지 전송 성공');
-    } else {
-      message.error('MQTT가 연결되어 있지 않습니다');
+    if (!client.current || !client.current.connected) {
+      return Promise.reject(new Error('MQTT not connected'));
     }
+
+    return new Promise((resolve, reject) => {
+      client.current.publish(
+        topic,
+        JSON.stringify(payload),
+        { qos: 1 },
+        (err) => {
+          if (err) {
+            console.error('메시지 전송 실패:', err);
+            messageApi.error('메시지 전송 실패');
+            reject(err);
+            return;
+          }
+
+          console.log('메시지 전송 성공: 토스트 호출');
+          messageApi.success('문구가 변경되었습니다.');
+          resolve(true);
+        }
+      );
+    });
   };
 
   const handleSubmit = async () => {
@@ -166,12 +182,12 @@ function Home() {
     
     // 텍스트 길이 검증 (최소 1자, 최대 30자)
     if (inputValue.length < 1) {
-      message.error("⚠️ 텍스트를 입력해주세요! (최소 1자 이상 필요)");
+      messageApi.error("텍스트를 입력해주세요! (최소 1자 이상 필요)");
       return;
     }
     
     if (inputValue.length > 30) {
-      message.error("⚠️ 텍스트가 너무 깁니다! (현재: " + inputValue.length + "자, 최대 30자까지)");
+      messageApi.error("텍스트가 너무 깁니다! (현재: " + inputValue.length + "자, 최대 30자까지)");
       return;
     }
     
@@ -183,9 +199,9 @@ function Home() {
       const mqttPayload = { action: inputValue };
       try {
         const topic = `${deviceId}/lb`;
-        publishMessage(topic, mqttPayload);
+        await publishMessage(topic, mqttPayload);
       } catch {
-        message.error("MQTT 연결 안됨");
+        messageApi.error("MQTT 연결 안됨");
       }
     } else {
       console.log("Modal 취소 버튼 클릭됨");
@@ -222,9 +238,9 @@ function Home() {
       const payload = { command: cmd };
       if (client.current && client.current.connected) {
         client.current.publish(topic, JSON.stringify(payload));
-        message.success(`${commandName} 명령 전송 성공`);
+        messageApi.success(`${commandName} 명령 전송 성공`);
       } else {
-        message.error("MQTT 연결이 되어있지 않습니다");
+        messageApi.error("MQTT 연결이 되어있지 않습니다");
       }
     } else {
       console.log("Modal 취소 버튼 클릭됨");
@@ -255,6 +271,7 @@ function Home() {
 
   return (
     <div style={{ minHeight: '100vh' }}>
+      {contextHolder}
       <HeaderComponent />
       <div 
         className="bg-gradient-to-b from-gray-50 to-gray-100"
@@ -372,7 +389,11 @@ function Home() {
               <div style={{ marginBottom: isMobile ? '6px' : '12px' }}>
                 <Progress
                   type="circle"
-                  percent={Math.min(((sensorData.temperature + 10) / 60) * 100, 100)}
+                  percent={
+                    sensorData.temperature === null
+                      ? 0
+                      : Math.min(((sensorData.temperature + 10) / 60) * 100, 100)
+                  }
                   size={isMobile ? 45 : 75}
                   strokeColor={{
                     '0%': '#3b82f6',
@@ -382,7 +403,9 @@ function Home() {
                   strokeWidth={6}
                   format={() => (
                     <div style={{ color: '#374151', textAlign: 'center' }}>
-                      <div style={{ fontSize: isMobile ? '12px' : '20px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.temperature}</div>
+                      <div style={{ fontSize: isMobile ? '12px' : '20px', fontWeight: 'bold', lineHeight: 1 }}>
+                        {sensorData.temperature === null ? '대기중' : sensorData.temperature}
+                      </div>
                       <div style={{ fontSize: isMobile ? '8px' : '12px', fontWeight: '500' }}>°C</div>
                     </div>
                   )}
@@ -409,7 +432,7 @@ function Home() {
               <div style={{ marginBottom: isMobile ? '6px' : '12px' }}>
                 <Progress
                   type="circle"
-                  percent={sensorData.humidity}
+                  percent={sensorData.humidity === null ? 0 : sensorData.humidity}
                   size={isMobile ? 45 : 75}
                   strokeColor={{
                     '0%': '#3b82f6',
@@ -419,7 +442,9 @@ function Home() {
                   strokeWidth={6}
                   format={() => (
                     <div style={{ color: '#374151', textAlign: 'center' }}>
-                      <div style={{ fontSize: isMobile ? '12px' : '20px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.humidity}</div>
+                      <div style={{ fontSize: isMobile ? '12px' : '20px', fontWeight: 'bold', lineHeight: 1 }}>
+                        {sensorData.humidity === null ? '대기중' : sensorData.humidity}
+                      </div>
                       <div style={{ fontSize: isMobile ? '8px' : '12px', fontWeight: '500' }}>%</div>
                     </div>
                   )}
@@ -455,7 +480,9 @@ function Home() {
                   margin: '0 auto'
                 }}>
                   <div style={{ color: 'white', textAlign: 'center' }}>
-                    <div style={{ fontSize: isMobile ? '10px' : '16px', fontWeight: 'bold', lineHeight: 1 }}>{sensorData.pm10 || '대기중'}</div>
+                    <div style={{ fontSize: isMobile ? '10px' : '16px', fontWeight: 'bold', lineHeight: 1 }}>
+                      {sensorData.pm10 || '대기중'}
+                    </div>
                   </div>
                 </div>
               </div>
