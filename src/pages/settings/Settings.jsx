@@ -11,7 +11,6 @@ function Settings() {
   const [messageApi, contextHolder] = message.useMessage();
 
   useEffect(() => {
-    // 로컬 스토리지에서 저장된 디바이스 ID 로드
     const savedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
     setDeviceId(savedDeviceId);
 
@@ -32,7 +31,6 @@ function Settings() {
       messageApi.error('디바이스 ID를 입력해주세요');
       return;
     }
-    // 디바이스 ID 저장
     const nextId = deviceId.trim();
     localStorage.setItem('deviceId', nextId);
     setDeviceId(nextId);

@@ -25,7 +25,7 @@ function Home() {
   const client = useRef(null);
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
-  const MQTT_BROKER_URL = `${protocol}//${window.location.host}/mqtt`; //raspberry pi test
+  const MQTT_BROKER_URL = `${protocol}//${window.location.host}/mqtt`;
   useEffect(() => {
     const handleStorageChange = () => {
       const storedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
@@ -48,14 +48,12 @@ function Home() {
       window.removeEventListener('deviceIdChange', handleDeviceIdChange);
     };
   }, []);
-  // const MQTT_BROKER_URL = `wss://ijoon.iptime.org:25813/mqtt`;
   useEffect(() => {
     if (!deviceId) {
       messageApi.warning('디바이스 ID가 설정되지 않아 MQTT 연결을 건너뜁니다.');
       return undefined;
     }
 
-    // 디바이스 변경 시 이전 센서 데이터를 초기화하여 다른 시리얼 값이 보이지 않도록 함
     resetSensorData();
 
     const sensorTopics = {
@@ -69,15 +67,14 @@ function Home() {
       username: "ijoon",
       password: "vXH5iVMqTfXB",
       keepalive: 60,
-      clean: false, // 세션 유지 (retain 메시지 수신을 위해)
-      reconnectPeriod: 5000, // 재연결 주기
+      clean: false,
+      reconnectPeriod: 5000,
     });
 
     client.current.on('connect', () => {
       console.log('MQTT 연결 성공');
       console.log('브로커 URL:', MQTT_BROKER_URL);
       
-      // retain 메시지를 받기 위해 QoS 1로 구독하고 약간의 지연 추가
       const topics = Object.values(sensorTopics);
       
       setTimeout(() => {
@@ -178,9 +175,7 @@ function Home() {
   };
 
   const handleSubmit = async () => {
-    console.log("입력값:", inputValue);
-    
-    // 텍스트 길이 검증 (최소 1자, 최대 30자)
+    consoLe.log("입력값:", inputValue); 
     if (inputValue.length < 1) {
       messageApi.error("텍스트를 입력해주세요! (최소 1자 이상 필요)");
       return;
@@ -191,26 +186,21 @@ function Home() {
       return;
     }
     
-    console.log("Modal.confirm 호출 시도");
-    
     const confirmed = window.confirm(`"${inputValue}" 텍스트를 전광판에 전송하시겠습니까?`);
     if (confirmed) {
-      console.log("Modal 확인 버튼 클릭됨");
       const mqttPayload = { action: inputValue };
       try {
         const topic = `${deviceId}/lb`;
         await publishMessage(topic, mqttPayload);
       } catch {
-        messageApi.error("MQTT 연결 안됨");
+        messageApi.error("MQTT 연결 안됨: 새로고침 후 다시 시도해주세요");
       }
     } else {
       console.log("Modal 취소 버튼 클릭됨");
     }
   };
 
-  // MQTT 제어 명령 발행 함수
   const publishCommand = (cmd) => {
-    console.log("publishCommand 호출됨:", cmd);
     
     const commandNames = {
       "spray_female": "여자 화장실 소독액 분사",
@@ -227,13 +217,9 @@ function Home() {
     };
 
     const commandName = commandNames[cmd] || cmd;
-    console.log("명령명:", commandName);
-
-    console.log("Modal.confirm 호출 시도");
     
     const confirmed = window.confirm(`${commandName} 명령을 실행하시겠습니까?`);
     if (confirmed) {
-      console.log("Modal 확인 버튼 클릭됨");
       const topic = `${deviceId}/control`;
       const payload = { command: cmd };
       if (client.current && client.current.connected) {
@@ -247,8 +233,6 @@ function Home() {
     }
   };
 
-
-  // 조건별 색상 함수
   const tempColor = (temp) =>
     temp < -8 || temp >= 33 ? '#b91c1c' : '#15803d';
 
@@ -300,7 +284,6 @@ function Home() {
               padding: isMobile ? '16px' : '24px'
             }}
           >
-      {/* Input and Button Section - Compact */}
       <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
         <div style={{ position: 'relative', width: '100%', maxWidth: '500px', margin: '0 auto' }}>
           <Input
@@ -352,7 +335,6 @@ function Home() {
 
       <Divider style={{ margin: window.innerWidth < 768 ? '24px 0' : '40px 0' }} />
 
-      {/* Sensor Data Section - Compact Horizontal Layout */}
       <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
         <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
           <h2 style={{ 
@@ -372,7 +354,6 @@ function Home() {
           }}></div>
         </div>
         <Row gutter={[isMobile ? 6 : 10, isMobile ? 6 : 10]}>
-          {/* 온도 카드 */}
           <Col xs={8} sm={8} md={6} lg={3}>
             <Card 
               className="text-center shadow-sm hover:shadow-md transition-all duration-300"
@@ -415,7 +396,6 @@ function Home() {
             </Card>
           </Col>
 
-          {/* 습도 카드 */}
           <Col xs={8} sm={8} md={6} lg={3}>
             <Card 
               className="text-center shadow-sm hover:shadow-md transition-all duration-300"
@@ -454,7 +434,6 @@ function Home() {
             </Card>
           </Col>
 
-          {/* 미세먼지 카드 */}
           <Col xs={8} sm={8} md={6} lg={3}>
             <Card 
               className="text-center shadow-sm hover:shadow-md transition-all duration-300"
@@ -494,7 +473,6 @@ function Home() {
 
       <Divider style={{ margin: isMobile ? '12px 0' : '16px 0' }} />
 
-      {/* 제어 명령 버튼 영역 - Compact Grid */}
       <div>
         <div style={{ marginBottom: isMobile ? '12px' : '16px' }}>
           <h2 style={{ 
@@ -514,7 +492,6 @@ function Home() {
           }}></div>
         </div>
         <Row gutter={[isMobile ? 6 : 10, isMobile ? 6 : 10]}>
-          {/* 소독액 분사 버튼들 */}
           <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
@@ -581,7 +558,6 @@ function Home() {
             </Card>
           </Col>
 
-          {/* 환풍기 버튼들 */}
           <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
@@ -645,7 +621,6 @@ function Home() {
             </Card>
           </Col>
 
-          {/* 중단 버튼 */}
           <Col xs={8} sm={8} md={6} lg={3}>
             <Card
               hoverable
