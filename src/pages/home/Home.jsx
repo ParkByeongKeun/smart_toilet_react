@@ -13,11 +13,10 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import mqtt from 'mqtt';
 import HeaderComponent from '../../components/HeaderComponent';
-import { DEFAULT_DEVICE_ID } from '../../constants/device';
 
 function Home() {
   const [messageApi, contextHolder] = message.useMessage();
-  const [deviceId, setDeviceId] = useState(() => localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID);
+  const [deviceId, setDeviceId] = useState('');
   const [inputValue, setInputValue] = useState('');
   const INITIAL_SENSOR_DATA = { temperature: null, humidity: null, pm10: null };
   const [sensorData, setSensorData] = useState(INITIAL_SENSOR_DATA);
@@ -28,7 +27,7 @@ function Home() {
   const MQTT_BROKER_URL = `${protocol}//${window.location.host}/mqtt`;
   useEffect(() => {
     const handleStorageChange = () => {
-      const storedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
+      const storedDeviceId = localStorage.getItem('deviceId') || '';
       setDeviceId(storedDeviceId);
     };
 
@@ -36,7 +35,7 @@ function Home() {
       if (event?.detail) {
         setDeviceId(event.detail);
       } else {
-        const storedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
+        const storedDeviceId = localStorage.getItem('deviceId') || '';
         setDeviceId(storedDeviceId);
       }
     };
@@ -50,7 +49,7 @@ function Home() {
   }, []);
   useEffect(() => {
     if (!deviceId) {
-      messageApi.warning('디바이스 ID가 설정되지 않아 MQTT 연결을 건너뜁니다.');
+      messageApi.warning('SMART TOILET 위치를 선택해주세요.');
       return undefined;
     }
 
@@ -174,8 +173,26 @@ function Home() {
     });
   };
 
+  const ensureDeviceSelected = () => {
+    if (deviceId) {
+      return true;
+    }
+    Modal.warning({
+      title: 'SMART TOILET 위치를 선택해주세요.',
+      content: '우측 상단 목록에서 장치를 선택한 뒤 다시 시도해주세요.',
+      centered: true,
+      okText: '확인',
+      maskClosable: true,
+    });
+    messageApi.warning('SMART TOILET 위치를 선택해주세요.');
+    return false;
+  };
+
   const handleSubmit = async () => {
-    consoLe.log("입력값:", inputValue); 
+    console.log("입력값:", inputValue); 
+    if (!ensureDeviceSelected()) {
+      return;
+    }
     if (inputValue.length < 1) {
       messageApi.error("텍스트를 입력해주세요! (최소 1자 이상 필요)");
       return;
@@ -201,6 +218,9 @@ function Home() {
   };
 
   const publishCommand = (cmd) => {
+    if (!ensureDeviceSelected()) {
+      return;
+    }
     
     const commandNames = {
       "spray_female": "여자 화장실 소독액 분사",

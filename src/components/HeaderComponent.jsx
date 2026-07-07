@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Layout, Select, message } from 'antd';
-import { DEFAULT_DEVICE_ID, broadcastDeviceIdChange } from '../constants/device';
+import { broadcastDeviceIdChange } from '../constants/device';
 import { fetchSmartToiletList } from '../api/smartToilet';
 
 const { Header } = Layout;
 
 function HeaderComponent() {
-  const [deviceId, setDeviceId] = useState(() => {
-    return localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
-  });
+  const [deviceId, setDeviceId] = useState('');
   const [serialOptions, setSerialOptions] = useState([]);
   const [isLoadingOptions, setIsLoadingOptions] = useState(true);
 
@@ -17,7 +15,7 @@ function HeaderComponent() {
 
   useEffect(() => {
     const handleStorageChange = () => {
-      const storedDeviceId = localStorage.getItem('deviceId') || DEFAULT_DEVICE_ID;
+      const storedDeviceId = localStorage.getItem('deviceId') || '';
       setDeviceId(storedDeviceId);
     };
 
@@ -130,7 +128,7 @@ function HeaderComponent() {
         {serialOptions.length > 0 ? (
           <Select
             value={selectedValue}
-            placeholder="지역 선택"
+            placeholder="위치를 선택해주세요"
             options={serialOptions}
             onChange={handleSelectChange}
             style={{
@@ -140,6 +138,7 @@ function HeaderComponent() {
             dropdownMatchSelectWidth={false}
             loading={isLoadingOptions}
             optionLabelProp="label"
+            status={!selectedValue ? 'warning' : undefined}
           />
         ) : (
           <div
